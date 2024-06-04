@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .metrics import bbox_iou
+from .tal import bbox2dist
 
 
 def circle_loss(pred, target):
@@ -32,22 +33,34 @@ class VarifocalLoss(nn.Module):
 
 
 class BboxLoss(nn.Module):
-
-    def __init__(self):
-        """Initialize the BboxLoss module."""
+    def __init__(self, reg_max, use_dfl=False):
         super().__init__()
+        self.reg_max = reg_max
+        self.use_dfl = use_dfl
 
-    def forward(self, pred_bboxes, anchor_points, target_bboxes, target_scores, target_scores_sum, fg_mask):
-        """计算IoU损失和圆形框损失。"""
+    def forward(self, pred_dist, pred_bboxes, anchor_points, target_bboxes, target_scores, target_scores_sum, fg_mask):
         weight = torch.masked_select(target_scores.sum(-1), fg_mask).unsqueeze(-1)
-        iou = bbox_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, CIoU=True)
+        iou = bbox_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=True, CIoU=True)  # 修改为支持xywh格式的iou计算
         loss_iou = ((1.0 - iou) * weight).sum() / target_scores_sum
 
-        # Circle box loss
-        loss_circle = circle_loss(pred_bboxes[fg_mask], target_bboxes[fg_mask]) * weight
-        loss_circle = loss_circle.sum() / target_scores_sum
+        if self.use_dfl:
+            target_ltrb = bbox2dist(anchor_points, target_bboxes, self.reg_max)
+            loss_dfl = self._df_loss(pred_dist[fg_mask].view(-1, self.reg_max + 1), target_ltrb[fg_mask]) * weight
+            loss_dfl = loss_dfl.sum() / target_scores_sum
+        else:
+            loss_dfl = torch.tensor(0.0).to(pred_dist.device)
 
-        return loss_iou, loss_circle
+        return loss_iou, loss_dfl
+
+    @staticmethod
+    def _df_loss(pred_dist, target):
+        tl = target.long()  # target left
+        tr = tl + 1  # target right
+        wl = tr - target  # weight left
+        wr = 1 - wl  # weight right
+        return (F.cross_entropy(pred_dist, tl.view(-1), reduction='none').view(tl.shape) * wl +
+                F.cross_entropy(pred_dist, tr.view(-1), reduction='none').view(tl.shape) * wr).mean(-1, keepdim=True)
+
 
 
 class KeypointLoss(nn.Module):

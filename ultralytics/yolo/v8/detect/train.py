@@ -78,9 +78,8 @@ class DetectionTrainer(BaseTrainer):
         # 其他代码保持不变
 
         def criterion(self, preds, batch):
-            """Compute loss for YOLO prediction and ground-truth."""
             if not hasattr(self, 'compute_loss'):
-                self.compute_loss = CircleLoss(de_parallel(self.model))  # 使用 CircleLoss
+                self.compute_loss = BboxLoss(self.model[-1].reg_max)
             return self.compute_loss(preds, batch)
 
     def label_loss_items(self, loss_items=None, prefix='train'):

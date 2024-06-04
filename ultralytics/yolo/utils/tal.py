@@ -248,15 +248,12 @@ def make_anchors(feats, strides, grid_cell_offset=0.5):
     return torch.cat(anchor_points), torch.cat(stride_tensor)
 
 
-def dist2bbox(distance, anchor_points, xywh=True, dim=-1):
-    """Distance to bounding box."""
+def dist2bbox(distance, anchor_points, xywh=True, dim=1):
     cx = distance[..., 0] * anchor_points[..., 2] + anchor_points[..., 0]
     cy = distance[..., 1] * anchor_points[..., 2] + anchor_points[..., 1]
     r = distance[..., 2] * anchor_points[..., 2]
-    if xywh:
-        return torch.stack((cx, cy, r, distance[..., 3]), dim=dim)
-    else:
-        return torch.stack((cx - r, cy - r, cx + r, cy + r), dim=dim)
+    return torch.stack((cx, cy, r), dim)
+
 
 
 
